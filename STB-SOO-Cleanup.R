@@ -5,10 +5,11 @@
 
 ###### 0 - Load Libraries ########
 library(tidyverse)
+library(readr)
 
 
 ####### 1 - Source files #########
-dataPath  <- "C:/Users/bjenkins/Documents/Datasets/Surface Trans Board Data/soo"
+dataPath  <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/soo"
 AAR_dataPath <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/AAR-Commodity-Code.csv"
 clean_dataPath <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/STB-Clean-Data/"
 #dataFile  <-  "some_functions.R" 
@@ -16,13 +17,12 @@ clean_dataPath <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/STB-Clean-Data/
 
 
 ####### 2 - Functions ###########
-# Why isn't this already a thing?
-`%!in%` <- Negate(`%in%`)
 
 # Remove commas, change appropriate columns from 'character' to 'numeric'
 fix.numeric <- function(DF){ DF %>% 
     mutate_at(vars(2:12), str_remove_all, pattern = ",") %>% 
-    mutate_at(vars(2:12), str_replace_all, pattern = "-", "0") %>%
+    mutate_at(vars(2:12), str_replace_all, pattern = "^\\s*-\\s*$", "0") %>% # only remove dash
+#    mutate_at(vars(2:12), str_replace_all, pattern = "^-\\d*$", "0") %>% #turn negatives to zero
     mutate_at(vars(2:12), as.numeric) %>% 
     mutate_if(is.numeric, ~replace(., is.na(.), 0))
 }
@@ -71,7 +71,7 @@ add.desc <- function(DF){ DF %>%
 
 
 ###### 3 - Import & Clean the Data ########
-# Load all SOO rail data into one dataframe for mass clean up
+# Load all SOO rail data into one dataframe for clean up
 SOO_all <- list.files(path = dataPath, pattern = ".*.csv", full.names = T) %>% 
   lapply(read.csv, header = F, stringsAsFactors = F, na.strings=c(""," ","NA")) %>% 
   bind_rows
@@ -123,7 +123,28 @@ tempSOO <- mutate(tempSOO, com_verify = tempSOO$com_id %in% AAR_Com_Code$STCC)
 View(filter(tempSOO, tempSOO$com_verify == F))
 sum(is.na(tempSOO$com_desc)) # 95 NA's found (ID's that don't match official list)
 
+##########################################################################################################################################
 
+require(reshape2)
+df <- tempSOO %>% #filter(str_detect(recv_terminate_tons, "^-\\d+$")) %>% View()
+  mutate(period = cumsum(str_detect(com_id, "^01$"))) %>% 
+  group_by(period) %>% filter(com_desc == "CRUSHED AND BROKEN STONE") %>% 
+  select(period, orig_terminate_tons, orig_deliver_tons, recv_terminate_tons, recv_deliver_tons)
+
+df <- melt(df,  id.vars = 'period', variable.name = 'series')
+
+ggplot(df) + 
+  geom_line(aes(period, value, color = series))
+
+tempSOO %>% #filter(str_detect(recv_terminate_tons, "^-\\d+$")) %>% View()
+  mutate(period = cumsum(str_detect(com_id, "^01$"))) %>% 
+  group_by(period) %>% filter(com_desc == "CRUSHED AND BROKEN STONE") %>% 
+  select(period, recv_terminate_tons) %>% 
+  ggplot(.) + 
+  geom_line(aes(period, recv_terminate_tons))
+
+
+##########################################################################################################################################
 ###### 5 - Export Clean Data ########
 # Name columns more appropriately
 # Waited till just before export because some column names are long and make it harder to look at data
@@ -143,6 +164,5 @@ colnames(tempSOO) <- c("com_id",
                         "com_verify")
 
 # Save that squeaky clean data to CSV! Row Names = False so it doesn't start the data set with row indexing
-write.csv(tempSOO,
-          file = clean_dataPath + "SOO_all.csv", 
-          row.names = FALSE)
+write_csv(tempSOO,
+          paste0(clean_dataPath, "SOO_2013-2019q2.csv"))

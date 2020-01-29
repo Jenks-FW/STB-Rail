@@ -1,17 +1,10 @@
 ## ----------------- Header ---------------------------
-##
 ## Script name: BNSF Rail Data
-##
 ## Purpose: Cleaning up STB BNSF Rail data
-##
 ## Author: Brad Jenkins (with help from Brad Hill)
-##
 ## Date Created: 2019-11-30
-##
 ## Email: BJenkins@FreightWaves.com
-##
 ## --- --- --- --- --- --- --- --- --- --- --- --- ---
-##
 ## Notes:
 ##   32 Excel spreadsheets; one for each quarter and one annual report from 2013 to mid 2019
 ##   There's 465 official AAR Commodity Codes, BNSF has 470 per report
@@ -32,13 +25,10 @@ clean_dataPath <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/STB-Clean-Data/
 
 
 ## ------------- 2 - Functions ----------------------
-# Why isn't this already a thing?
-`%!in%` <- Negate(`%in%`)
-
 # Remove commas, change appropriate columns from 'character' to 'numeric'
 fix.numeric <- function(DF){ DF %>% 
     mutate_at(vars(2:12), str_remove_all, pattern = ",") %>% 
-    mutate_at(vars(2:12), str_replace_all, pattern = "-", "0") %>%
+    mutate_at(vars(2:12), str_replace_all, pattern = "^\\s*-\\s*$", "0") %>%
     mutate_at(vars(2:12), as.numeric) %>% 
     mutate_if(is.numeric, ~replace(., is.na(.), 0))
 }
@@ -179,6 +169,5 @@ colnames(tempBNSF) <- c("com_id",
                         "com_verify")
 
 # Save that squeaky clean data to CSV! row.names = False so it doesn't start the data set with row indexing
-write.csv(tempBNSF,
-          file = clean_dataPath + "BNSF_all.csv",
-          row.names = FALSE)
+write_csv(tempBNSF,
+          paste0(clean_dataPath, "BNSF_2013-2019q2.csv"))

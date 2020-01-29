@@ -5,10 +5,10 @@
 
 ###### 0 - Load Libraries ########
 library(tidyverse)
-
+library(readr)
 
 ####### 1 - Source files #########
-dataPath  <- "C:/Users/bjenkins/Documents/Datasets/Surface Trans Board Data/kcs"
+dataPath  <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/kcs"
 AAR_dataPath <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/AAR-Commodity-Code.csv"
 clean_dataPath <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/STB-Clean-Data/"
 #dataFile  <-  "some_functions.R" 
@@ -19,7 +19,7 @@ clean_dataPath <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/STB-Clean-Data/
 # Remove commas, change appropriate columns from 'character' to 'numeric'
 fix.numeric <- function(DF){ DF %>% 
     mutate_at(vars(2:12), str_remove_all, pattern = ",") %>% 
-    mutate_at(vars(2:12), str_replace_all, pattern = "-", "0") %>%
+    mutate_at(vars(2:12), str_replace_all, pattern = "^\\s*-\\s*$", "0") %>%
     mutate_at(vars(2:12), as.numeric) %>% 
     mutate_if(is.numeric, ~replace(., is.na(.), 0))
 }
@@ -138,21 +138,20 @@ View(filter(tempKCS, tempKCS$com_verify == F))
 # Name columns more appropriately
 # Waited till just before export because some column names are long and make it harder to look at data
 colnames(tempKCS) <- c("com_id",
-                        "com_desc",
-                        "orig_terminate_carloads",
-                        "orig_terminate_tons",
-                        "orig_deliver_carloads",
-                        "orig_deliver_tons",
-                        "recv_terminate_carloads",
-                        "recv_terminate_tons",
-                        "recv_deliver_carloads",
-                        "recv_deliver_tons",
-                        "tot_carried_carloads",
-                        "tot_carried_tons",
-                        "tot_gross_revenue",
-                        "com_verify")
+                       "com_desc",
+                       "orig_terminate_carloads",
+                       "orig_terminate_tons",
+                       "orig_deliver_carloads",
+                       "orig_deliver_tons",
+                       "recv_terminate_carloads",
+                       "recv_terminate_tons",
+                       "recv_deliver_carloads",
+                       "recv_deliver_tons",
+                       "tot_carried_carloads",
+                       "tot_carried_tons",
+                       "tot_gross_revenue",
+                       "com_verify")
 
 # Save that squeaky clean data to CSV! Row Names = False so it doesn't start the data set with row indexing
-write.csv(tempKCS,
-          file = clean_dataPath + "KCS_all.csv", 
-          row.names = FALSE)
+write_csv(tempKCS,
+          paste0(clean_dataPath, "KCS_2013-2019q2.csv"))

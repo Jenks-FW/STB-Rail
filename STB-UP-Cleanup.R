@@ -5,10 +5,11 @@
 
 ###### 0 - Load Libraries ########
 library(tidyverse)
+library(readr)
 
 
 ####### 1 - Source files #########
-dataPath  <- "C:/Users/bjenkins/Documents/Datasets/Surface Trans Board Data/up"
+dataPath  <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/up"
 AAR_dataPath <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/AAR-Commodity-Code.csv"
 clean_dataPath <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/STB-Clean-Data/"
 #dataFile  <-  "some_functions.R" 
@@ -16,13 +17,10 @@ clean_dataPath <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/STB-Clean-Data/
 
 
 ####### 2 - Functions ###########
-# Why isn't this already a thing?
-`%!in%` <- Negate(`%in%`)
-
 # Remove commas, change appropriate columns from 'character' to 'numeric'
 fix.numeric <- function(DF){ DF %>% 
     mutate_at(vars(2:12), str_remove_all, pattern = ",") %>% 
-    mutate_at(vars(2:12), str_replace_all, pattern = "-", "0") %>%
+    mutate_at(vars(2:12), str_replace_all, pattern = "^\\s*-\\s*$", "0") %>%
     mutate_at(vars(2:12), as.numeric) %>% 
     mutate_if(is.numeric, ~replace(., is.na(.), 0))
 }
@@ -85,11 +83,32 @@ str(tempUP)
 colSums(is.na(tempUP)) # This data is a mess! Columns don't line up from one period to another
 
 # Columns aren't matching up due to weird formatting from excel. This moves data to the left columns and NA's to the right
-tempUP <-  as.tibble(t(apply(tempUP, 1, function(x) { return(c(x[!is.na(x)],x[is.na(x)]) )} )))
-colSums(is.na(tempUP)) # You can see it works by looking at NA totals again.
+tempUP <-  as_tibble(t(apply(tempUP, 1, function(x) { return(c(x[!is.na(x)],x[is.na(x)]) )} )))
+#colSums(is.na(tempUP)) # looking at NA totals again... did I break anything? YES :(
 
 # Giving simple temp names for easy reference, and dropping columns full of NAs
 tempUP <- select(tempUP, com_id = 1, y = 2:12)
+
+# What data moved to wrong column? What row is it in?
+#which(str_detect(tempUP$com_id, "^\\d+$") & is.na(tempUP$y11)) # look at columns with a numeric id and 'NA' in the last column
+# These are all the rows that moved data to the wrong column
+#68, 237, 589, 661, 662, 1470, 2001, 2022, 2122, 2461, 2524, 2872, 3035, 3609, 4581, 15288, 15508
+bad_rows <- tempUP %>% 
+  filter(str_detect(com_id, "^\\d+$") & is.na(tempUP$y11)) %>%
+  mutate(rownum = which(str_detect(tempUP$com_id, "^\\d+$") & is.na(tempUP$y11)))
+
+# Fix it
+t6 <- bad_rows %>% 
+  mutate_at(vars(starts_with('y')), na_if, 0) %>% 
+  mutate(y11 = coalesce(y9, y10),
+         y9 = NA,
+         y10 = NA) %>% 
+  mutate_at(vars(starts_with('y')), replace_na, 0) 
+
+# Put it back in tempUP
+for(i in 1:nrow(t6)){
+  tempUP[t6$rownum[i],] <- t6[i,-ncol(t6)]
+}
 
 # Clearing commas out, replacing '-' with '0', and changing class to numeric for all measured data
 tempUP <- fix.numeric(tempUP)
@@ -107,7 +126,7 @@ tempUP <- delete.na(tempUP)
 # View(filter(tempUP, com_id == "10")) # This is the first ID that doesn't need padding and it's present in all periods, thankfully.
 # View(filter(tempUP, lead(com_id == "10")))
 
-# Make sure there's a leading zero for the first commodity codes up to ID: 10 (per time period)
+# Make sure there's a leading zero for the first commodity codes up to id == 10 (per time period)
 tempUP$com_id <- str_trim(tempUP$com_id)
 tempUP <- pad.left(tempUP)
 
@@ -134,21 +153,20 @@ sum(is.na(tempUP$com_desc)) # 96 NA's found (ID's that don't match official list
 # Name columns more appropriately
 # Waited till just before export because some column names are long and make it harder to look at data
 colnames(tempUP) <- c("com_id",
-                        "com_desc",
-                        "orig_terminate_carloads",
-                        "orig_terminate_tons",
-                        "orig_deliver_carloads",
-                        "orig_deliver_tons",
-                        "recv_terminate_carloads",
-                        "recv_terminate_tons",
-                        "recv_deliver_carloads",
-                        "recv_deliver_tons",
-                        "tot_carried_carloads",
-                        "tot_carried_tons",
-                        "tot_gross_revenue",
-                        "com_verify")
+                      "com_desc",
+                      "orig_terminate_carloads",
+                      "orig_terminate_tons",
+                      "orig_deliver_carloads",
+                      "orig_deliver_tons",
+                      "recv_terminate_carloads",
+                      "recv_terminate_tons",
+                      "recv_deliver_carloads",
+                      "recv_deliver_tons",
+                      "tot_carried_carloads",
+                      "tot_carried_tons",
+                      "tot_gross_revenue",
+                      "com_verify")
 
 # Save that squeaky clean data to CSV! Row Names = False so it doesn't start the data set with row indexing
-write.csv(tempUP,
-          file = clean_dataPath + "UP_all.csv", 
-          row.names = FALSE)
+write_csv(tempUP,
+          paste0(clean_dataPath, "UP_2013-2019q2.csv"))

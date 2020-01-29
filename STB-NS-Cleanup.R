@@ -5,10 +5,10 @@
 
 ###### 0 - Load Libraries ########
 library(tidyverse)
-
+library(readr)
 
 ####### 1 - Source files #########
-dataPath  <- "C:/Users/bjenkins/Documents/Datasets/Surface Trans Board Data/ns"
+dataPath  <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/ns"
 AAR_dataPath <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/AAR-Commodity-Code.csv"
 clean_dataPath <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/STB-Clean-Data/"
 #dataFile  <-  "some_functions.R" 
@@ -16,14 +16,11 @@ clean_dataPath <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/STB-Clean-Data/
 
 
 ####### 2 - Functions ###########
-# Why isn't this already a thing?
-`%!in%` <- Negate(`%in%`)
-
 # Remove commas, change appropriate columns from 'character' to 'numeric'
 fix.numeric <- function(DF){ DF %>% 
-    mutate_at(vars(3:13), str_remove_all, pattern = ",") %>% 
-    mutate_at(vars(3:13), str_replace_all, pattern = "-", "0") %>%
-    mutate_at(vars(3:13), as.numeric) %>% 
+    mutate_at(vars(2:12), str_remove_all, pattern = ",") %>% 
+    mutate_at(vars(2:12), str_replace_all, pattern = "^\\s*-\\s*$", "0") %>%
+    mutate_at(vars(2:12), as.numeric) %>% 
     mutate_if(is.numeric, ~replace(., is.na(.), 0))
 }
 
@@ -63,6 +60,13 @@ load.aar <- function(AAR){
   AAR_Com_Code
 }
 
+# Delete bad Commodity ID, add Description
+add.desc <- function(DF){ DF %>%
+    rename(com_id = 1) %>%
+    left_join(AAR_Com_Code %>% select(STCC, Traditional.FCS.Name), by = c('com_id' = 'STCC')) %>%
+    select(com_id, com_desc = Traditional.FCS.Name, everything())
+}
+
 
 ###### 3 - Import & Clean the Data ########
 # Load all NS rail data into one dataframe for mass clean up
@@ -79,13 +83,10 @@ str(tempNS)
 colSums(is.na(tempNS)) # Last 2 columns are full of NAs
 
 # Giving simple temp names for easy reference, and dropping columns full of NAs
-tempNS <- select(tempNS, com_id = 1, com_desc = 2, y = 3:13)
+tempNS <- select(tempNS, com_id = 1, y = 3:13)
 
 # Clearing commas out, replacing '-' with '0', and changing class to numeric for all measured data
 tempNS <- fix.numeric(tempNS)
-
-# Descriptions have lots of white space that isn't necessary
-tempNS$com_desc <- str_trim(tempNS$com_desc)
 
 # View(tempNS %>% filter(str_detect(com_id, "^CODE$") | str_detect(com_id, "^1$"))) # Are there 32 periods? Yes!
 # sum(na.omit(str_detect(tempNS$com_id, "^\\s*'?0?1\\s*$"))) # Since every period starts with "01" or "1" (and it's unique), this should = 32
@@ -105,6 +106,10 @@ tempNS <- pad.left(tempNS)
 
 # Importing (and cleaning) AAR Code List
 AAR_Com_Code <- load.aar()
+
+# Add Descriptions from AAR list by matching com_id to AAR
+# So any com_id that isn't on the list gets 'NA' instead of a description
+tempNS <- add.desc(tempNS)
 
 
 ###### 4 - Verification ########
@@ -134,6 +139,6 @@ colnames(tempNS) <- c("com_id",
                         "com_verify")
 
 # Save that squeaky clean data to CSV! Row Names = False so it doesn't start the data set with row indexing
-write.csv(tempNS,
-          file = clean_dataPath + "NS_all.csv", 
-          row.names = FALSE)
+write_csv(tempNS,
+          paste0(clean_dataPath, "NS_2013-2019q2.csv"))
+

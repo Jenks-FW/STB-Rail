@@ -5,10 +5,11 @@
 
 ###### 0 - Load Libraries ########
 library(tidyverse)
+library(readr)
 
 
 ####### 1 - Source files #########
-dataPath  <- "C:/Users/bjenkins/Documents/Datasets/Surface Trans Board Data/gtc"
+dataPath  <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/gtc/"
 AAR_dataPath <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/AAR-Commodity-Code.csv"
 clean_dataPath <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/STB-Clean-Data/"
 #dataFile  <-  "some_functions.R" 
@@ -69,7 +70,7 @@ load.aar <- function(AAR){
 
 # Load all GTC rail data into one dataframe for convenient mass cleaning
 GTC_all <- list.files(path = dataPath, pattern = ".*.csv", full.names = T) %>% 
-    lapply(read.csv, header = F, stringsAsFactors = F) %>% 
+    lapply(read.csv, header = F, stringsAsFactors = F, na.strings=c(""," ","NA")) %>% 
     bind_rows
 
 # Assigning a temp variable so when I ruin the table I can run this line and try again
@@ -141,6 +142,6 @@ colnames(tempGTC) <- c("com_id",
                         "com_verify")
 
 # Save that squeaky clean data to CSV!
-write.csv(tempGTC, 
-          file = clean_dataPath + "GTC_all.csv", 
-          row.names = FALSE)
+write_csv(tempGTC, 
+          paste0(clean_dataPath, "GTC_2013-2019q2.csv"))
+

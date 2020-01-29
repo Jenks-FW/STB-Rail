@@ -5,6 +5,7 @@
 
 ###### 0 - Load Libraries ########
 library(tidyverse)
+library(readr)
 
 
 ####### 1 - Source files #########
@@ -19,7 +20,7 @@ clean_dataPath <- "C:/Users/bjenkins/Documents/Datasets/STB-Data/STB-Clean-Data/
 # Remove commas, change appropriate columns from 'character' to 'numeric'
 fix.numeric <- function(DF){ DF %>% 
     mutate_at(vars(2:12), str_remove_all, pattern = ",") %>% 
-    mutate_at(vars(2:12), str_replace_all, pattern = "-", "0") %>%
+    mutate_at(vars(2:12), str_replace_all, pattern = "^\\s*-\\s*$", "0") %>%
     mutate_at(vars(2:12), as.numeric) %>% 
     mutate_if(is.numeric, ~replace(., is.na(.), 0))
 }
@@ -93,8 +94,10 @@ tempCSX <- fix.numeric(tempCSX)
 #View(tempCSX %>% filter(str_detect(com_id, "^\\s*CODE\\s*$") | str_detect(com_id, "^\\s*'?0?1\\s*$"))) # Are there 32 periods? Yes!
 sum(na.omit(str_detect(tempCSX$com_id, "^\\s*'?0?1\\s*$"))) # Since every period starts with "01" or "1" (and it's unique), this should = 32
 sum(na.omit(str_detect(tempCSX$com_id, "^\\s*'?0?12\\s*$"))) # Same reasoning, different id, to double check what's lost
+
 # Removing rows of NA, they aren't needed and they're in the way!
 tempCSX <- delete.na(tempCSX)
+
 # Sanity check: there should be 25 CSX spreadsheets with 466 rows of data in each.
 # So there should be 14,912 rows total after deleting extras          ### 14,932 rows remain 
 good_rows <- tempCSX$com_id[1:466]
@@ -114,7 +117,7 @@ View(filter(tempCSX, str_detect(tempCSX$com_id, "^0"))) # All periods start with
 #        filter(!com_id %in% zero_pad_range & str_detect(tempCSX$com_id, "^0"))) # There are 7 periods with code "01129" 
 # which(tempCSX$com_id == "01129", arr.ind=TRUE) # Here's where they're hiding
 # zero_pad_range2 <- tempCSX$com_id[11650:11714]
-# Somehow, even though I've hardcoded number of rows for pad.left function, it managed to correctly pad left even with an extra ID in 7 periods
+
 # Everything looks good, time to compare to official AAR Commodity list and add description and verification columns
 
 
@@ -124,7 +127,7 @@ AAR_Com_Code <- load.aar()
 # Add Descriptions from AAR list by matching com_id to AAR
 # So any com_id that isn't on the list gets 'NA' instead of a description
 tempCSX <- add.desc(tempCSX)
-# Since there's 7 periods with 469 rows and 25 with 466 rows, there should be 53 NA's in com_desc
+# Since there's 7 periods with 469 rows and 25 with 466 rows, there should be 53 NA's in com_desc ((469-465)*7)+((466-465)*25)
 sum(is.na(tempCSX$com_desc)) 
 
 
@@ -153,11 +156,6 @@ colnames(tempCSX) <- c("com_id",
                         "tot_gross_revenue",
                         "com_verify")
 
-# Save that squeaky clean data to CSV! Row Names = False so it doesn't start the data set with row indexing
-#write.csv(tempCSX, 
-#          file = "C:\\Users\\bjenkins\\Documents\\Datasets\\Surface Trans Board Data\\_STB Clean Data\\CSX\\CSX_13_1.csv", 
-#          row.names = FALSE)
+write_csv(tempCSX,
+          paste0(clean_dataPath, "CSX_2013-2019q2.csv"))
 
-write.csv(tempCSX,
-          file = clean_dataPath + "CSX_all.csv", 
-          row.names = FALSE)
