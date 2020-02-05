@@ -1,54 +1,134 @@
-# # Remove comma, dash, NA, etc from data_values columns, change class to numeric
-# #assign(DF, fix.numeric(DF))
-# DF <- fix.numeric(DF)
-# 
-# # Separate id/description if combined, drop description
-# if (DF %>% select(com_id) %>% str_detect(id_desc)) {
-#   #assign(DF, split.id(DF))
-#   DF <- split.id(DF)
-# }
-# # Remove comma, quote, NA, etc from com_id column
-# #assign(DF, clean.id(DF))
-# DF <- clean.id(DF)
-# 
-# # Determine which row to stop pad.left function
-# stop_row <- DF %>%
-#   select(com_id) %>%
-#   str_detect(pattern = fixed(stop_row_id))
+###DONT NEED TO MAKE THEM JUST TO REWRITE THEM IN NEXT LINE
+## --------------- Extract df for each rail company -----------------
+
+for (i in 1:length(DF_list)) {
+  assign(names(DF_list[i]),
+         as_tibble(DF_list[[i]], .name_repair = "minimal"))
+}
+
+
+###### Trying to skip the DF_list step and create tibble of tibbles using for loop
+# Loop over xl files to import as list of tibbles
+rail_master <- tibble(rail = character(),
+                      filepath = character(),
+                      raw_df = list())
+for (i in 1:length(xl_files)) {
+  rail_master[, 3] <- map_df(excel_sheets(xl_files[i]),
+                             ~ read_excel(xl_files[i],
+                                          sheet = .x, 
+                                          col_names = FALSE),)
+}
+
+rail_master <- 
+  enframe(names(DF_list), name = NULL) %>%
+  mutate(
+    filepath = str_c(raw_dataPath, value, sep = ''),
+    raw_df = DF_list
+  )
+##### 
+
+# Loop over xl files to import as list of tibbles (MADE BETTER WITH MORE PIPES)
+DF_list <- NULL
+for (i in 1:length(xl_files)) {
+  rail_DF <- map_df(excel_sheets(xl_files[i]),
+                    ~ read_excel(xl_files[i],
+                                 sheet = .x, 
+                                 col_names = FALSE),)
+  rail_name <- str_sub(xl_files[i], start = 59L)
+  DF_list <- list(rail_DF) %>% 
+    set_names(., eval(rail_name)) %>% 
+    append(DF_list, .)
+}
+
+
+## DONT NEED
+# Load list of expected filenames
+always_check <-
+  read_lines(file = paste0(clean_dataPath, "always_check.csv"))
+
+# Create list of CSV files
+csv_filenames <-
+  list.files(path = raw_dataPath, 
+             pattern = ".*.csv",
+             full.names = FALSE)
+
+### SHOULDNT NEED
+rail_master <- 
+  enframe(csv_filenames, name = NULL) %>%
+  mutate(
+    filepath = str_c(raw_dataPath, value, sep = ''),
+    raw_df = map(filepath, read_csv)
+  )
+###
+
+### SHOULDNT NEED TO CONVERT TO CSV
+# Loop over xl_files creating a CSV for each
+for (i in 1:length(xl_files)) {
+  xl_sheets <- excel_sheets(xl_files[i])
+  rail_xl <- map_df(xl_sheets,
+                    ~ read_excel(xl_files[i],
+                                 sheet = .x, 
+                                 col_names = FALSE),) %>%
+    write_csv(path = paste0(
+      raw_dataPath,
+      "raw-",
+      str_extract(xl_files[i], rail),
+      ".csv"
+    ))
+}
+###
+
+# Remove comma, dash, NA, etc from data_values columns, change class to numeric
+#assign(DF, fix.numeric(DF))
+ DF <- fix.numeric(DF)
+
+# Separate id/description if combined, drop description
+if (DF %>% select(com_id) %>% str_detect(id_desc)) {
+   #assign(DF, split.id(DF))
+   DF <- split.id(DF)
+}
+ # Remove comma, quote, NA, etc from com_id column
+ #assign(DF, clean.id(DF))
+ DF <- clean.id(DF)
+
+ # Determine which row to stop pad.left function
+ stop_row <- DF %>%
+   select(com_id) %>%
+   str_detect(pattern = fixed(stop_row_id))
 
 #Loop to add leading zero and description column
-#id_mtrx <- matrix(0L,
-#                  nrow = 0,
-#                  ncol = 4,
-#                  dimnames = list(NULL, stop_row_id))
-#for (i in 1:length(DF_list)) {
-#  # Determine which row to stop pad.left function
-#  stop_row <- eval(as.name(DF_list[i])) %>%
-#    select(com_id) %>%
-#    str_detect(pattern = fixed(stop_row_id))
-#  # Based on above, pad.left until stop_row_id reached
-#  if (stop_row[1]) {
-#    assign(DF_list[i], 
-#           pad.left(eval(as.name(DF_list[i])), 
-#                    stop_row = stop_row_id[1]))
-#  } else if (stop_row[2]) {
-#    assign(DF_list[i], 
-#           pad.left(eval(as.name(DF_list[i])), 
-#                    stop_row = stop_row_id[2]))
-#  } else if (stop_row[3]) {
-#    assign(DF_list[i], 
-#           pad.left(eval(as.name(DF_list[i])), 
-#                    stop_row = stop_row_id[3]))
-#  } else if (stop_row[4]) {
-#    assign(DF_list[i], 
-#           pad.left(eval(as.name(DF_list[i])), 
-#                    stop_row = stop_row_id[4]))
-#  } else {
-#    stop('Can\'t identify stop_row to zero pad one or more datasets!')
-#  }
-#  assign(DF_list[i], 
-#         add.desc(eval(as.name(DF_list[i]))))
-#}
+id_mtrx <- matrix(0L,
+                  nrow = 0,
+                  ncol = 4,
+                  dimnames = list(NULL, stop_row_id))
+for (i in 1:length(DF_list)) {
+  # Determine which row to stop pad.left function
+  stop_row <- eval(as.name(DF_list[i])) %>%
+    select(com_id) %>%
+    str_detect(pattern = fixed(stop_row_id))
+  # Based on above, pad.left until stop_row_id reached
+  if (stop_row[1]) {
+    assign(DF_list[i],
+           pad.left(eval(as.name(DF_list[i])),
+                    stop_row = stop_row_id[1]))
+  } else if (stop_row[2]) {
+    assign(DF_list[i],
+           pad.left(eval(as.name(DF_list[i])),
+                    stop_row = stop_row_id[2]))
+  } else if (stop_row[3]) {
+    assign(DF_list[i],
+           pad.left(eval(as.name(DF_list[i])),
+                    stop_row = stop_row_id[3]))
+  } else if (stop_row[4]) {
+    assign(DF_list[i],
+           pad.left(eval(as.name(DF_list[i])),
+                    stop_row = stop_row_id[4]))
+  } else {
+    stop('Can\'t identify stop_row to zero pad one or more datasets!')
+  }
+  assign(DF_list[i],
+         add.desc(eval(as.name(DF_list[i]))))
+}
 
 #Unecessary for loop to determine which id per dataset to stop pad.left function
 #for (i in 1:length(DF_list)) {

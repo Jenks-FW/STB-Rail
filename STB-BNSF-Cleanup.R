@@ -14,6 +14,7 @@
 ## ------------- 0 - Initialize ----------------------
 library(tidyverse)
 library(readxl)
+library(magrittr)
 
 
 ## ------------- 1 - Sources -------------------------
@@ -36,9 +37,8 @@ fix.numeric <- function(DF){ DF %>%
 # Separate Commodity ID from Description
 split.id.desc <- function(DF, com_col = 1){ DF %>% 
     rename(com_orig = com_col) %>% 
-    mutate(com_id = str_extract(com_orig, "^[0-9]+"),
-           com_desc = str_trim(str_remove(com_orig, com_id))) %>% 
-    select(com_id, com_desc, everything())
+    mutate(com_id = str_extract(com_orig, "^[0-9]+")) %>% 
+    select(com_id, everything())
 }
 
 # Removing rows of NA, they aren't needed
@@ -140,10 +140,13 @@ tempBNSF <- pad.left(tempBNSF)
 # Importing (and cleaning) AAR Code List
 AAR_Com_Code <- load.aar()
 
+tempBNSF <- add.desc(tempBNSF)
+
 
 ## ------------- 4 - Verification -------------------
 # Adds a column to verify codes match up with AAR Commodity Codes
-tempBNSF <- mutate(tempBNSF, com_verify = tempBNSF$com_id %in% AAR_Com_Code$STCC)
+tempBNSF <- mutate(tempBNSF, 
+                   com_verify = tempBNSF$com_id %in% AAR_Com_Code$STCC)
 
 # If I zero padded the wrong code or missed padding one that needed it, we'd see it here
 View(filter(tempBNSF, tempBNSF$com_verify == F))
@@ -151,23 +154,54 @@ colSums(is.na(tempBNSF))
 
 
 ###### 5 - Export ########
+# Dataframe needs clarification
+quarter <- c("Q1", "Q2", "Q3", "Q4", "Q0")
+yr <- as.character(c('2013':'2019'))    #seq.Date(2013/1/1, 2019/1/1, years)#years(2013:2019)
+tempBNSF$quarter <- 0
+
+tempBNSF %<>%  mutate(grp = cumsum(str_detect(com_id, "^1$|^01$"))) %>% 
+  group_by(grp) #%>% mutate(year = 
+for (i in 1:nrow(tempBNSF)) { 
+  n <- tempBNSF$grp[i] %% 5
+  if(n == 0) {n <- 5}
+  tempBNSF$quarter[i] <- quarter[n]
+}
+
+tempBNSF %<>%
+  mutate(
+    year = case_when(
+      grp < 6   ~ yr[1],
+      grp < 11  ~ yr[2],
+      grp < 16  ~ yr[3],
+      grp < 21  ~ yr[4],
+      grp < 26  ~ yr[5],
+      grp < 31  ~ yr[6],
+      TRUE      ~ yr[7]
+    )
+  ) %>% 
+  ungroup(grp) %>% select(-grp)
+
+
 # Name columns more appropriately
 # Waited till just before export because some column names are long and make it harder to look at data
-colnames(tempBNSF) <- c("com_id",
-                        "com_desc",
-                        "orig_terminate_carloads",
-                        "orig_terminate_tons",
-                        "orig_deliver_carloads",
-                        "orig_deliver_tons",
-                        "recv_terminate_carloads",
-                        "recv_terminate_tons",
-                        "recv_deliver_carloads",
-                        "recv_deliver_tons",
-                        "tot_carried_carloads",
-                        "tot_carried_tons",
-                        "tot_gross_revenue",
-                        "com_verify")
+colnames(tempBNSF) <- c("commodity_id",
+                        "commodity_description",
+                        "original_terminate_carloads",
+                        "original_terminate_tons",
+                        "original_deliver_carloads",
+                        "original_deliver_tons",
+                        "received_terminate_carloads",
+                        "received_terminate_tons",
+                        "received_deliver_carloads",
+                        "received_deliver_tons",
+                        "total_carried_carloads",
+                        "total_carried_tons",
+                        "total_gross_revenue",
+                        "commodity_verify",
+                        "quarter",
+                        "year")
 
-# Save that squeaky clean data to CSV! row.names = False so it doesn't start the data set with row indexing
+tempBNSF %<>% select(year, quarter, everything())
+
 write_csv(tempBNSF,
           paste0(clean_dataPath, "BNSF_2013-2019q2.csv"))

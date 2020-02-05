@@ -21,7 +21,9 @@ memory.limit(30000000)   # Needed on some PCs to increase memory allowance, no i
 
 ## --------------- Sources ------------------------------------------
 
-raw_dataPath <-
+# FILENAMES MUST INCLUDE COMPANY, QUARTER, AND YEAR 
+# ex: "C:/.../documents/BNSF_Q3_2019.xls"
+raw_dataPath <- 
   "C:/Users/bjenkins/Documents/Datasets/STB-Data/STB-Raw-New/"
 clean_dataPath <-
   "C:/Users/bjenkins/Documents/Datasets/STB-Data/STB-Clean-Data/"
@@ -83,47 +85,35 @@ add.desc <- function(DF){ DF %>%
 }
 
 
-## --------------- Convert new rail XL to CSV -----------------------
+## --------------- Import new rail Excel files ----------------------
 
 # Create list of excel filenames in directory
 xl_files <-
   list.files(raw_dataPath, pattern = "\\.xlsx?", full.names = TRUE)
 
-rail <- "(BNSF)|(CSX)|(GTC)|(KCS)|(NS)|(SOO)|(UP)"
+rail_pattern <- "(BNSF)|(CSX)|(GTC)|(KCS)|(NS)|(SOO)|(UP)"
 
-# Loop over xl_files creating a CSV for each
+# Loop over xl files to import as list of tibbles
+DF_list <- NULL
 for (i in 1:length(xl_files)) {
-  xl_sheets <- excel_sheets(xl_files[i])
-  rail_xl <- map_df(xl_sheets,
+  DF_list <- map_df(excel_sheets(xl_files[i]),
                     ~ read_excel(xl_files[i],
                                  sheet = .x, 
-                                 col_names = FALSE),) %>%
-    write_csv(path = paste0(
-      raw_dataPath,
-      "raw-",
-      str_extract(xl_files[i], rail),
-      ".csv"
-    ))
+                                 col_names = FALSE),) %>% 
+    list() %>% 
+    set_names(., str_extract(xl_files[i], rail_pattern)) %>% 
+    append(DF_list, .)
 }
 
-# Clean up
-rm(rail, rail_xl, xl_sheets, xl_files)
+rail_master <- 
+  enframe(names(DF_list), name = NULL) %>%
+  mutate(
+    filepath = xl_files,
+    raw_df = DF_list
+  )
 
 
 ## --------------- Import CSV files ---------------------------------
-
-# Create list of CSV files
-csv_filenames <-
-  list.files(path = raw_dataPath, 
-             pattern = ".*.csv",
-             full.names = FALSE)
-
-rail_master <- 
-  enframe(csv_filenames, name = NULL) %>%
-  mutate(
-    filepath = str_c(raw_dataPath, value, sep = ''),
-    raw_df = map(filepath, read_csv)
-  )
 
 # Load AAR Commodity Codes
 AAR_Com_Code <-
@@ -134,53 +124,43 @@ AAR_Com_Code <-
   ) %>% 
   as_tibble()
 
-# Load list of expected filenames
-always_check <-
-  read_lines(file = paste0(clean_dataPath, "always_check.csv"))
-
 
 ## --------------- Check that all files imported --------------------
 
-if (!all(always_check %in% rail_master$value)) {
+if (!all(names(DF_list) %in% c("BNSF", "CSX", "GTC", 
+                               "KCS", "NS", "SOO","UP"))) {
   stop('One or more datasets is missing!')
 }
 
-
-## --------------- Extract df for each rail company -----------------
-
-DF_list <- NULL
-for (i in 1:length(csv_filenames)) {
-  rail_name <- str_sub(csv_filenames[i], start = 5L, end = -5L)
-  assign(rail_name,
-         as_tibble(rail_master$raw_df[i], .name_repair = "minimal")[[1]])
-  DF_list <- append(DF_list, rail_name)
-}
+#EXAMPLE
+#!all(c('a', 'b', 'c') %in% c('a', 'b', 'c', 'd')) ## FALSE
+#!all(c('a', 'b', 'c', 'd') %in% c('a', 'b', 'c')) ## TRUE
 
 
-## --------------- Name columns, drop extras ------------------------
+## ---------- Extract DFs, Name columns, drop extras ----------------
 
 for (i in 1:length(DF_list)) {
   # Temp assign DF
-  DF <- eval(as.name(DF_list[i]))
-  if (DF_list[i] == "SOO") {
-    assign(DF_list[i], select(
+  DF <- DF_list[[i]]
+  if (names(DF_list[i]) == "SOO") {
+    assign(names(DF_list[i]), select(
       DF,
       com_id = 4,
       y = c(5, 6, 8, 9, 11, 12, 14, 15, 17, 18, 19)))
-  } else if (DF_list[i] == "UP") {
+  } else if (names(DF_list[i]) == "UP") {
     keep_col <- colSums(is.na(DF)) / nrow(DF) < 0.95
     DF <- DF[, keep_col, drop = FALSE]
-    assign(DF_list[i], select(
+    assign(names(DF_list[i]), select(
       DF,
       com_id = 1, 
       y = 2:12))
-  } else if (DF_list[i] == "GTC" | DF_list[i] == "NS") {
-    assign(DF_list[i], select(
+  } else if (names(DF_list[i]) == "GTC" | DF_list[i] == "NS") {
+    assign(names(DF_list[i]), select(
       DF,
       com_id = 1,
       y = 3:13))
   } else {
-    assign(DF_list[i], select(
+    assign(names(DF_list[i]), select(
       DF,
       com_id = 1,
       y = 2:12))
@@ -203,12 +183,10 @@ for (i in 1:length(DF_list)) {
 id_desc <- "\\s*\'?0?1\\s*FARM\\s*PRODUCTS\\s*"
 stop_row_id <- c('10', '101', '10112', '102')
 
-## --------------- WORK IN PROGRESS --------------------------------- Works for BNSF, not for CSX 
-
 for (i in 1:length(DF_list)) {
   # Temp assign DF
-  DF <- eval(as.name(DF_list[i])) %>% 
-    # Remove comma, dash, NA, etc from data_values columns, change class to numeric
+  DF <- eval(as.name(rail_master$value[i])) %>% 
+    # Remove comma, dash, NA, etc from columns, change class to numeric
     fix.numeric() %>% 
     # Separate id/description if combined, drop description col
     when(select(., com_id) %>% str_detect(id_desc)
@@ -231,34 +209,46 @@ for (i in 1:length(DF_list)) {
   } else if (stop_row[4]) {
     DF <- pad.left(DF, stop_row = stop_row_id[4])
   } else {
-    stop('Can\'t identify stop_row to pad leading zero for one or more datasets!')
+    stop('Can\'t identify stop_row for one or more datasets!')
   } 
   
   DF %<>%
     # Add STCC descriptions to all official com_id's 
     add.desc() %>%
     # Add com_verify column to mark unofficial com_id's
-    mutate(com_verify = DF$com_id %in% AAR_Com_Code$STCC)
+    mutate(com_verify = DF$com_id %in% AAR_Com_Code$STCC,
+           company = names(DF_list[i]),
+           quarter = str_match(xl_files[i], 
+                               "(Q\\d{1})_\\d{4}.xlsx?")[,2],
+           year = str_match(xl_files[i], 
+                            "Q\\d{1}_(\\d{4}).xlsx?")[,2],
+           ) %>% 
+    select(company, year, quarter, everything())
   
   # Give columns descriptive names
-  colnames(DF) <- c("com_id",
-                  "com_desc",
-                  "orig_terminate_carloads",
-                  "orig_terminate_tons",
-                  "orig_deliver_carloads",
-                  "orig_deliver_tons",
-                  "recv_terminate_carloads",
-                  "recv_terminate_tons",
-                  "recv_deliver_carloads",
-                  "recv_deliver_tons",
-                  "tot_carried_carloads",
-                  "tot_carried_tons",
-                  "tot_gross_revenue",
-                  "com_verify")
+  colnames(DF) <- c("company",
+                    "year",
+                    "quarter",
+                    "commodity_id",
+                    "commodity_description",
+                    "original_terminate_carloads",
+                    "original_terminate_tons",
+                    "original_deliver_carloads",
+                    "original_deliver_tons",
+                    "received_terminate_carloads",
+                    "received_terminate_tons",
+                    "received_deliver_carloads",
+                    "received_deliver_tons",
+                    "total_carried_carloads",
+                    "total_carried_tons",
+                    "total_gross_revenue",
+                    "commodity_verify"
+                    )
   
-  # Assign temp variable back to rail co name
-  assign(DF_list[i], DF)
-}
+  # Assign temp variable back to rail company
+  assign(names(DF_list[i]), DF)
+} 
+## --------------- WORK IN PROGRESS --------------------------------- 
 
 
 ## --------------- Validation -------------------------------------
@@ -266,10 +256,10 @@ for (i in 1:length(DF_list)) {
 # AAR codes missing from each DF
 missing_AAR <- vector('list', 7)
 for (i in 1:length(DF_list)) {
-  DF <- eval(as.name(DF_list[i]))
-  tmp <- AAR_Com_Code %>% 
-    filter(!AAR_Com_Code$STCC %in% DF$com_id)
-  missing_AAR[[i]] <- tmp
+  DF <- eval(as.name(rail_master$value[i]))
+  missing_AAR[[i]] <- AAR_Com_Code %>% 
+    filter(!AAR_Com_Code$STCC %in% DF$commodity_id)
+  #missing_AAR[[i]] <- tmp
   #(paste0(DF_list[i], "-missing_AAR"))
 }
 
@@ -278,11 +268,15 @@ rail_master %<>%
   mutate(clean_df = lst(BNSF, CSX, GTC, KCS, NS, SOO,UP), 
          missing_AAR_codes = missing_AAR)
 
-#add DF summary column?
+rail_new <- bind_rows(BNSF, CSX, GTC, KCS, NS, SOO, UP)
 
 
 ## --------------- Export -------------------------------------------
 
-
-#Don't forget to mark XL and CSVs to not get picked up again (or move to another directory)
+#dbWriteTable(scon, 
+#             "indx_index_data", 
+#             ???????,
+#             overwrite = F,
+#             append = T)
+#Don't forget to move/delete excel files to not get picked up again
 ##

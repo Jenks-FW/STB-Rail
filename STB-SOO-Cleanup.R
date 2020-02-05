@@ -6,6 +6,7 @@
 ###### 0 - Load Libraries ########
 library(tidyverse)
 library(readr)
+library(magrittr)
 
 
 ####### 1 - Source files #########
@@ -146,23 +147,55 @@ tempSOO %>% #filter(str_detect(recv_terminate_tons, "^-\\d+$")) %>% View()
 
 ##########################################################################################################################################
 ###### 5 - Export Clean Data ########
+# Dataframe needs clarification
+quarter <- c("Q1", "Q2", "Q3", "Q4", "Q0")
+yr <- c("2013", "2014", "2015", "2016", "2017", "2018", "2019")
+tempSOO$quarter <- 0
+
+tempSOO %<>%  mutate(grp = cumsum(str_detect(com_id, "^1$|^01$"))) %>% 
+  group_by(grp) #%>% mutate(year = 
+
+for (i in 1:nrow(tempSOO)) { 
+  n <- tempSOO$grp[i] %% 5
+  if(n == 0) {n <- 5}
+  tempSOO$quarter[i] <- quarter[n]
+}
+
+tempSOO %<>%
+  mutate(
+    year = case_when(
+      grp < 6   ~ yr[1],
+      grp < 11  ~ yr[2],
+      grp < 16  ~ yr[3],
+      grp < 21  ~ yr[4],
+      grp < 26  ~ yr[5],
+      grp < 31  ~ yr[6],
+      TRUE      ~ yr[7]
+    )
+  ) %>% 
+  ungroup(grp) %>% select(-grp)
+
+
 # Name columns more appropriately
 # Waited till just before export because some column names are long and make it harder to look at data
-colnames(tempSOO) <- c("com_id",
-                        "com_desc",
-                        "orig_terminate_carloads",
-                        "orig_terminate_tons",
-                        "orig_deliver_carloads",
-                        "orig_deliver_tons",
-                        "recv_terminate_carloads",
-                        "recv_terminate_tons",
-                        "recv_deliver_carloads",
-                        "recv_deliver_tons",
-                        "tot_carried_carloads",
-                        "tot_carried_tons",
-                        "tot_gross_revenue",
-                        "com_verify")
+colnames(tempSOO) <- c("commodity_id",
+                       "commodity_description",
+                       "original_terminate_carloads",
+                       "original_terminate_tons",
+                       "original_deliver_carloads",
+                       "original_deliver_tons",
+                       "received_terminate_carloads",
+                       "received_terminate_tons",
+                       "received_deliver_carloads",
+                       "received_deliver_tons",
+                       "total_carried_carloads",
+                       "total_carried_tons",
+                       "total_gross_revenue",
+                       "commodity_verify",
+                       "quarter",
+                       "year")
 
-# Save that squeaky clean data to CSV! Row Names = False so it doesn't start the data set with row indexing
+tempSOO %<>% select(year, quarter, everything())
+
 write_csv(tempSOO,
           paste0(clean_dataPath, "SOO_2013-2019q2.csv"))
